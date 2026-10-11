@@ -181,6 +181,37 @@ describe('Generic Health & Workout Telemetry Repositories', () => {
     expect(mockQuery.mock.calls[1]?.[1]?.[12]).toEqual(olderCapturedAt);
   });
 
+  it('lets a NULL-stamped legacy total only onto a NULL-stamped row', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 'daily-1',
+          total_calories: 1400,
+          total_calories_captured_at: null,
+        },
+      ],
+    });
+
+    await genericHealthRepo.upsertDailyHealthMetrics('user-1', 'user-1', {
+      user_id: 'user-1',
+      entry_date: '2026-07-29',
+      source_provider: 'garmin',
+      total_calories: 1400,
+      total_calories_captured_at: null,
+    });
+
+    const sql = String(mockQuery.mock.calls[0]?.[0]);
+    // Both CASEs admit a NULL incoming stamp only when the stored stamp is
+    // also NULL, so an unordered legacy write can never displace a stamped
+    // total — the delayed-Date.now() race this gate had before.
+    expect(
+      sql.match(
+        /EXCLUDED\.total_calories_captured_at IS NULL\s+AND daily_health_metrics\.total_calories_captured_at IS NULL/g
+      )
+    ).toHaveLength(2);
+    expect(mockQuery.mock.calls[0]?.[1]?.[12]).toBeNull();
+  });
+
   it('gets Health Connect total calories for a date range', async () => {
     const capturedAt = new Date('2026-07-29T12:00:00Z');
     mockQuery.mockResolvedValueOnce({

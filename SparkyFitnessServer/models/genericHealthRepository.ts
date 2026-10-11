@@ -255,23 +255,42 @@ export async function upsertDailyHealthMetrics(
          active_calories = COALESCE(EXCLUDED.active_calories, daily_health_metrics.active_calories),
          bmr_calories = COALESCE(EXCLUDED.bmr_calories, daily_health_metrics.bmr_calories),
          -- Daily aggregate syncs can finish out of order. Advance the calorie
-         -- snapshot and its capture time together, never independently.
+         -- snapshot and its capture time together, never independently. A NULL
+         -- incoming stamp means the producer could not order its snapshot, so
+         -- it may only fill an equally untimestamped slot, never displace a
+         -- stamped total.
          total_calories = CASE
            WHEN EXCLUDED.total_calories IS NOT NULL
-             AND EXCLUDED.total_calories_captured_at IS NOT NULL
              AND (
-               daily_health_metrics.total_calories_captured_at IS NULL
-               OR EXCLUDED.total_calories_captured_at > daily_health_metrics.total_calories_captured_at
+               (
+                 EXCLUDED.total_calories_captured_at IS NULL
+                 AND daily_health_metrics.total_calories_captured_at IS NULL
+               )
+               OR (
+                 EXCLUDED.total_calories_captured_at IS NOT NULL
+                 AND (
+                   daily_health_metrics.total_calories_captured_at IS NULL
+                   OR EXCLUDED.total_calories_captured_at > daily_health_metrics.total_calories_captured_at
+                 )
+               )
              )
            THEN EXCLUDED.total_calories
            ELSE daily_health_metrics.total_calories
          END,
          total_calories_captured_at = CASE
            WHEN EXCLUDED.total_calories IS NOT NULL
-             AND EXCLUDED.total_calories_captured_at IS NOT NULL
              AND (
-               daily_health_metrics.total_calories_captured_at IS NULL
-               OR EXCLUDED.total_calories_captured_at > daily_health_metrics.total_calories_captured_at
+               (
+                 EXCLUDED.total_calories_captured_at IS NULL
+                 AND daily_health_metrics.total_calories_captured_at IS NULL
+               )
+               OR (
+                 EXCLUDED.total_calories_captured_at IS NOT NULL
+                 AND (
+                   daily_health_metrics.total_calories_captured_at IS NULL
+                   OR EXCLUDED.total_calories_captured_at > daily_health_metrics.total_calories_captured_at
+                 )
+               )
              )
            THEN EXCLUDED.total_calories_captured_at
            ELSE daily_health_metrics.total_calories_captured_at
